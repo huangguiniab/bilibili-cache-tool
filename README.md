@@ -19,3 +19,11 @@
 + blv格式支持
 + 将danmaku.xml转换为ass格式
 
+### 致谢
+
+ 感谢这些开源软件，没有这些软件，该项目不可能实现
+
+ + [GNU Bash](https://www.gnu.org/software/bash/)
+ + [GNU Coreutils](https://www.gnu.org/software/coreutils/)
+ + [ffmpeg](https://ffmpeg.org)
+ + [jq](https://github.com/stedolan/jq)
