@@ -1,0 +1,212 @@
+#!/bin/bash
+
+#以下是用户可以自行设置的变量
+savedir=$HOME/storage/shared/哔哩哔哩缓存操作工具输出/
+save_filetype=mkv
+softlist="ffmpeg jq coreutils"
+name=bct 
+
+
+
+#以下为常量，一般用户请勿修改
+workdir_standard=$HOME/storage/shared/Android/data/tv.danmaku.bili/download/
+workdir_global=$HOME/storage/shared/Android/data/com.bilibili.app.in/download/
+####
+#初始化函数逻辑
+###
+func_message(){
+case $1 in
+	info)
+	text=$2$3$4$5$6$7$8$9
+	echo -e "\033[32m"[$name] [info] $text"\033[0m"
+	;;
+	error)
+	text=$2$3$4$5$6$7$8$9
+	echo -e "\033[31m"[$name] [error] $text"\033[0m"
+	;;
+	warning)
+	text=$2$3$4$5$6$7$8$9
+	echo -e "\033[33m"[$name] [warning] $text"\033[0m"
+	;;
+esac	
+}
+func_selector(){
+	while [ 0 ]
+	do
+		read -r -p '输入内容> ' return_val
+		if [ -z $return_val ]
+		then
+			func_message error 输入不能为空
+		else
+			break
+		fi
+	done
+}
+func_storage_check(){
+	if [ -L $HOME/storage/shared ]
+	then
+		func_message info "存储权限 [YES]"
+		true
+	else
+		func_message error "存储权限 [NO]"
+		false
+	fi
+}
+func_avlist(){
+	echo 
+	for avlist in $(ls -1 ${workdir}/)
+	do
+		echo av${avlist}
+	done
+}
+func_getnum(){
+	echo $1 | sed 's/av//' | tee
+}
+func_checkcmd(){
+	if command -v $1 > /dev/null
+	then
+		func_message info $1 " [YES]"
+		true
+	else
+		func_message error $1 " [NO]"
+		false
+	fi
+	}
+#主程序
+
+func_message info 正在检测存储权限
+
+while [ 0 ]
+do
+	if func_storage_check
+	then
+		break
+	else
+		func_message warning 请授予Termux存储权限
+		termux-setup-storage
+	fi
+done
+#func_message info 我是一条提示信息
+#func_message warning 我是一条警告信息
+#func_message error 我是一条错误信息
+func_message info  正在检查软件 
+for task_softname in ${softlist}
+do
+	if func_checkcmd $task_softname
+	then
+		true
+	else
+		func_message error 发生错误，软件$task_softname未安装
+		func_message error "尝试使用如下命令: pkg in "$task_softname " 来安装该软件"
+		exit 127
+	fi
+done
+
+#工作进程主函数
+func_videopackworker(){
+#检测savedir是否存在，不存在自动创建，创建失败抛出错误退出
+if [ -d $savedir ]
+then
+	true
+else
+	func_message warning 保存目录不存在，正在尝试自动创建保存目录
+	if mkdir $savedir
+	then
+		func_message info 自动创建成功
+		true
+	else
+		func_message error 创建失败，可能是含有未预期的嵌套目录，请手动创建重试
+		exit 11
+	fi
+fi
+#检测workdir是否存在，内部是否有文件，没有则抛出错误代码退出
+if [ -d $workdir ]
+then
+	true
+else
+	func_message error 请确认应用程序是否安装
+	exit 12
+fi
+#检测workdir目录是否为空
+if [ $(ls -A $workdir |wc -l) = 0  ]
+then
+	func_message error 啥都木有，无需任何操作
+	exit 13
+else
+	true
+fi
+#视频封装部分
+
+for task_avnum in $(func_avlist)
+do	
+	#定义并初始化，每个所需文件的位置
+	task_audiofile=$(find ${workdir}/$(func_getnum $task_avnum) -name audio.m4s)
+	task_videofile=$(find ${workdir}/$(func_getnum $task_avnum) -name video.m4s)
+	task_indexfile=$(find ${workdir}/$(func_getnum $task_avnum) -name index.json)
+
+
+	#最外层判断，判断文件是否存在，如果存在，直接跳过
+	if [ -f ${savedir}/${task_avnum}.${save_filetype} ]
+        then
+#                func_message warning 文件已存在，已自动跳过 ${task_avnum}
+                true
+	else
+
+	#第二层判断，音频文件检测
+	if [ -z ${task_audiofile} ]
+	then
+		func_message error 操作失败:未找到${task_avnum}的音频文件，请删除${task_avnum}的缓存记录并重新缓存以重试
+		break
+	else
+		if [ $(md5sum $task_audiofile|cut -d ' ' -f 1) = $(cat $task_indexfile|jq '.audio[0]'|jq '.md5'|sed 's/"//g') ]
+		then
+			func_message info 音频检验成功
+		else
+			func_message error 音频已损坏，可能是缓存未完毕，请返回客户端，重新下载重试
+			exit 
+		fi
+	fi
+	#音频部分第二层判断结束
+
+	#第二层判断，视频文件检测
+	if [ -z ${task_videofile} ]
+	then
+		func_message error 操作失败:未找到${task_avnum}的视频文件，请删除${task_avnum}的缓存记录并重新缓存以重试
+		break
+	else
+		if [ $(md5sum $task_videofile|cut -d ' ' -f 1) = $(cat $task_indexfile|jq '.video[0]'|jq '.md5'|sed 's/"//g') ]
+		then
+			func_message info 视频检验成功
+		else
+			func_message error 视频已损坏，可能是缓存未完毕，请返回客户端，重新下载重试
+		fi
+	fi
+	#视频部分第二层判断结束
+
+	#使用ffmpeg合成视频
+	ffmpeg -i ${task_audiofile} -i ${task_videofile} -codec copy ${savedir}/${task_avnum}.${save_filetype}
+	fi
+	#最外层判断结束
+done
+}
+
+func_message info 请输入行动
+func_message info '1(开始导出并合并视频) 2(退出)'
+while [ 0 ]
+do
+	func_selector 
+	case $return_val in
+		1)
+		workdir=${workdir_standard} func_videopackworker
+		workdir=${workdir_global} func_videopackworker
+		break
+		;;
+		2)
+		echo 你选择了2
+		break
+		;;
+		*)
+		func_message error 未预期的输入
+		;;
+esac
+done
