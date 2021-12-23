@@ -86,9 +86,6 @@ do
 		termux-setup-storage
 	fi
 done
-#func_message info 我是一条提示信息
-#func_message warning 我是一条警告信息
-#func_message error 我是一条错误信息
 func_message info  正在检查软件 
 for task_softname in ${softlist}
 do
@@ -191,22 +188,26 @@ done
 }
 
 func_message info 请输入行动
-func_message info '1(开始导出并合并视频) 2(退出)'
 while [ 0 ]
 do
+	func_message info '0(退出)'
+	func_message info '1(开始导出并合并视频[国内版])'
+	func_message info '2(开始导出并合并视频[谷歌版])'
 	func_selector 
 	case $return_val in
+		0|q)
+			break
+		;;
 		1)
-		workdir=${workdir_standard} func_videopackworker
-		workdir=${workdir_global} func_videopackworker
-		break
+			workdir=${workdir_standard} func_videopackworker
+			func_message info 操作完毕
 		;;
 		2)
-		echo 你选择了2
-		break
+			workdir=${workdir_global} func_videopackworker
+			func_message info 操作完毕
 		;;
 		*)
-		func_message error 未预期的输入
+			func_message error 未预期的输入
 		;;
 esac
 done
