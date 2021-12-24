@@ -3,58 +3,56 @@
 #以下是用户可以自行设置的变量
 savedir=$HOME/storage/shared/哔哩哔哩缓存操作工具输出/
 save_filetype=mkv
-softlist="ffmpeg jq coreutils"
 name=bct 
-
 
 
 #以下为常量，一般用户请勿修改
 workdir_standard=$HOME/storage/shared/Android/data/tv.danmaku.bili/download/
 workdir_global=$HOME/storage/shared/Android/data/com.bilibili.app.in/download/
-####
-#初始化函数逻辑
-###
+softlist="ffmpeg jq find coreutils"
+
+#加载函数到内存
+
 func_message(){
 case $1 in
 	info)
-	text=$2$3$4$5$6$7$8$9
-	echo -e "\033[32m"[$name] [info] $text"\033[0m"
+        text=$2$3$4$5$6$7$8$9
+        echo -e "\033[32m"[$name] [info] $text"\033[0m"
 	;;
-	error)
-	text=$2$3$4$5$6$7$8$9
-	echo -e "\033[31m"[$name] [error] $text"\033[0m"
+    error)
+        text=$2$3$4$5$6$7$8$9
+        echo -e "\033[31m"[$name] [error] $text"\033[0m"
 	;;
 	warning)
-	text=$2$3$4$5$6$7$8$9
-	echo -e "\033[33m"[$name] [warning] $text"\033[0m"
+        text=$2$3$4$5$6$7$8$9
+        echo -e "\033[33m"[$name] [warning] $text"\033[0m"
 	;;
 esac	
 }
-func_selector(){
-	while [ 0 ]
+func_inputbox(){
+while [ 0 ]
 	do
 		read -r -p '输入内容> ' return_val
 		if [ -z $return_val ]
-		then
-			func_message error 输入不能为空
-		else
-			break
+            then
+                func_message error 输入不能为空
+            else
+                break
 		fi
 	done
 }
 func_storage_check(){
-	if [ -L $HOME/storage/shared ]
-	then
+if [ -L $HOME/storage/shared ]
+    then
 		func_message info "存储权限 [YES]"
 		true
 	else
 		func_message error "存储权限 [NO]"
 		false
-	fi
+fi
 }
-func_avlist(){
-	echo 
-	for avlist in $(ls -1 ${workdir}/)
+func_getavlist(){
+for avlist in $(ls -1 $1/)
 	do
 		echo av${avlist}
 	done
@@ -62,30 +60,26 @@ func_avlist(){
 func_getnum(){
 	echo $1 | sed 's/av//' | tee
 }
-func_checkcmd(){
-	if command -v $1 > /dev/null
+func_check_command(){
+if command -v $1 > /dev/null
 	then
 		func_message info $1 " [YES]"
 		true
 	else
 		func_message error $1 " [NO]"
 		false
-	fi
-	}
-#主程序
-
+fi
+}
+#初始化函数
+func_init_check(){
 func_message info 正在检测存储权限
-
-while [ 0 ]
-do
-	if func_storage_check
-	then
+if func_storage_check
+    then
 		break
 	else
 		func_message warning 请授予Termux存储权限
 		termux-setup-storage
-	fi
-done
+fi
 func_message info  正在检查软件 
 for task_softname in ${softlist}
 do
@@ -98,9 +92,36 @@ do
 		exit 127
 	fi
 done
+}
+#m4s格式相关函数
+
+func_m4s_file_check(){
+    var_m4s_file_path=$1
+    var_m4s_index_path=$2
+    var_task_avnum=$3
+    var_task_type_friendly=$4
+    var_task_type=$5
+if [ $(md5sum ${var_m4s_file_path}|cut -d ' ' -f 1) = $(cat ${var_m4s_index_path}|jq ".${var_task_type}[0]"|jq '.md5'|sed 's/"//g') ]
+	then
+		func_message info ${task_avnum}的${var_task_type_friendly}检验成功
+		true
+	else
+		func_message error ${var_task_type_friendly}已损坏，可能是缓存未完毕，请返回客户端，重新下载重试
+		false
+fi
+}
+
+# 全部函数已加载到内存
+
+# 程序主逻辑
+
+set -o pipefail
+set -o errexit
+
+
 
 #工作进程主函数
-func_videopackworker(){
+func_m4s_video_pack(){
 #检测savedir是否存在，不存在自动创建，创建失败抛出错误退出
 if [ -d $savedir ]
 then
@@ -134,76 +155,80 @@ else
 fi
 #视频封装部分
 
-for task_avnum in $(func_avlist)
+for task_avnum in $(func_getavlist $workdir)
 do	
 	#定义并初始化，每个所需文件的位置
 	task_audiofile=$(find ${workdir}/$(func_getnum $task_avnum) -name audio.m4s)
 	task_videofile=$(find ${workdir}/$(func_getnum $task_avnum) -name video.m4s)
 	task_indexfile=$(find ${workdir}/$(func_getnum $task_avnum) -name index.json)
 
+	if [ -z ${task_videofile} ]
+		then
+			func_message error 发生错误:${task_avnum}的视频文件未找到，请前往客户端删除重试
+			break
+		else
+			true
+	fi
+	
+	if [ -z ${task_audiofile} ]
+		then
+			func_message error 发生错误:${task_avnum}的音频文件未找到，请前往客户端删除重试
+			break
+		else
+			true
+	fi
+	
+	if [ -z ${task_indexfile} ]
+		then
+			func_message error 发生错误:${task_avnum}的索引文件未找到，请前往客户端删除重试
+			break
+		else
+			true
+	fi
+	
 
 	#最外层判断，判断文件是否存在，如果存在，直接跳过
 	if [ -f ${savedir}/${task_avnum}.${save_filetype} ]
-        then
-#                func_message warning 文件已存在，已自动跳过 ${task_avnum}
+		then
+			true
+	else
+		if func_m4s_file_check $task_videofile $task_indexfile $task_avnum 视频 video
+		then
+			true
+		else
+			break
+		fi
+		if func_m4s_file_check $task_audiofile $task_indexfile $task_avnum 音频 audio
+		then
+			true
+		else
+			break
+		fi
                 true
-	else
-
-	#第二层判断，音频文件检测
-	if [ -z ${task_audiofile} ]
-	then
-		func_message error 操作失败:未找到${task_avnum}的音频文件，请删除${task_avnum}的缓存记录并重新缓存以重试
-		break
-	else
-		if [ $(md5sum $task_audiofile|cut -d ' ' -f 1) = $(cat $task_indexfile|jq '.audio[0]'|jq '.md5'|sed 's/"//g') ]
-		then
-			func_message info 音频检验成功
-		else
-			func_message error 音频已损坏，可能是缓存未完毕，请返回客户端，重新下载重试
-			exit 
-		fi
-	fi
-	#音频部分第二层判断结束
-
-	#第二层判断，视频文件检测
-	if [ -z ${task_videofile} ]
-	then
-		func_message error 操作失败:未找到${task_avnum}的视频文件，请删除${task_avnum}的缓存记录并重新缓存以重试
-		break
-	else
-		if [ $(md5sum $task_videofile|cut -d ' ' -f 1) = $(cat $task_indexfile|jq '.video[0]'|jq '.md5'|sed 's/"//g') ]
-		then
-			func_message info 视频检验成功
-		else
-			func_message error 视频已损坏，可能是缓存未完毕，请返回客户端，重新下载重试
-		fi
-	fi
-	#视频部分第二层判断结束
-
-	#使用ffmpeg合成视频
-	ffmpeg -i ${task_audiofile} -i ${task_videofile} -codec copy ${savedir}/${task_avnum}.${save_filetype}
+		#使用ffmpeg合成视频
+		ffmpeg -i ${task_audiofile} -i ${task_videofile} -codec copy ${savedir}/${task_avnum}.${save_filetype}
 	fi
 	#最外层判断结束
 done
 }
 
-func_message info 请输入行动
 while [ 0 ]
 do
+	func_message info 请输入行动
 	func_message info '0(退出)'
 	func_message info '1(开始导出并合并视频[国内版])'
 	func_message info '2(开始导出并合并视频[谷歌版])'
-	func_selector 
+	func_inputbox
 	case $return_val in
 		0|q)
 			break
 		;;
 		1)
-			workdir=${workdir_standard} func_videopackworker
+			workdir=${workdir_standard} func_m4s_video_pack
 			func_message info 操作完毕
 		;;
 		2)
-			workdir=${workdir_global} func_videopackworker
+			workdir=${workdir_global} func_m4s_video_pack
 			func_message info 操作完毕
 		;;
 		*)
