@@ -212,6 +212,15 @@ do
 done
 }
 
+if [ -e /etc/os-release ]
+	then
+		func_message error "检测到在不受支持的环境运行，您似乎运行在Linux操作系统上"
+		func_message error "本脚本必须运行在安卓手机的termux app上"
+		exit 1
+	else
+		true
+fi
+
 while [ 0 ]
 do
 	func_message info 请输入行动
